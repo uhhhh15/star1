@@ -119,8 +119,8 @@ function addFavorite(messageInfo) {
 
     console.log(`${pluginName}: Added favorite:`, item);
 
-    // Update the popup if it's open
-    if (favoritesPopup && favoritesPopup.isVisible()) {
+    // Update the popup if it's open and the underlying dialog is open
+    if (favoritesPopup && favoritesPopup.dlg && favoritesPopup.dlg.open) {
         updateFavoritesPopup();
     }
 }
@@ -228,14 +228,7 @@ function handleFavoriteToggle(event) {
         return;
     }
 
-    const messageIndex = parseInt(messageIdString, 10);
-    if (isNaN(messageIndex)) {
-        console.error(`${pluginName}: handleFavoriteToggle - 退出：mesid 解析为 NaN: ${messageIdString}`);
-        // 注意：这里之前直接 return 了，但 messageIdString 本身可能就是有效的标识符
-        // 现在改为继续尝试使用 messageIdString，而不是仅依赖解析后的索引
-        // return;
-    }
-
+    // messageIdString is the primary identifier, usually a string that looks like a number
     console.log(`${pluginName}: handleFavoriteToggle - 获取 context 和消息对象 (mesid: ${messageIdString})`);
     let context;
     try {
@@ -249,8 +242,8 @@ function handleFavoriteToggle(event) {
         return;
     }
 
-    // 尝试通过 mesid 字符串或数字索引查找消息
-    const message = context.chat.find((msg, index) => String($(msg).attr?.('mesid')) === messageIdString || String(index) === messageIdString);
+    // Find message primarily by mesid attribute string
+    const message = context.chat.find(msg => String($(msg).attr?.('mesid')) === messageIdString);
 
     if (!message) {
         console.error(`${pluginName}: handleFavoriteToggle - 退出：在 chat 中未找到 mesid 为 ${messageIdString} 的消息对象`);
@@ -278,9 +271,9 @@ function handleFavoriteToggle(event) {
     if (!isCurrentlyFavorited) {
         console.log(`${pluginName}: handleFavoriteToggle - 准备调用 addFavorite`);
         const messageInfo = {
-            messageId: messageIdString, // 使用原始 mesid 字符串
+            messageId: messageIdString, // Use the original mesid string
             sender: message.name,
-            role: message.is_user ? 'user' : 'character',
+            role: message.is_user ? 'user' : 'character', // Determine role based on message property
         };
         console.log(`${pluginName}: handleFavoriteToggle - addFavorite 参数:`, messageInfo);
         try {
@@ -309,10 +302,14 @@ function handleFavoriteToggle(event) {
 function addFavoriteIconsToMessages() {
     $('#chat').find('.mes').each(function() {
         const messageElement = $(this);
+        // Find the designated container for extra buttons
         const extraButtonsContainer = messageElement.find('.extraMesButtons');
         if (extraButtonsContainer.length && !extraButtonsContainer.find('.favorite-toggle-icon').length) {
             extraButtonsContainer.append(messageButtonHtml);
-            // console.log(`${pluginName}: Added favorite icon to message ${messageElement.attr('mesid')}`); // 可以取消注释以调试
+        } else if (!extraButtonsContainer.length) {
+            // Fallback or alternative placement if .extraMesButtons doesn't exist
+            // Maybe append directly to .mes_buttons? Requires checking ST structure
+            // console.warn(`${pluginName}: Could not find .extraMesButtons for message ${messageElement.attr('mesid')}`);
         }
     });
 }
@@ -322,27 +319,28 @@ function addFavoriteIconsToMessages() {
  */
 function refreshFavoriteIconsInView() {
     const chatMetadata = ensureFavoritesArrayExists();
-    // 如果无法获取元数据，或者元数据中没有 favorites 数组，则退出
     if (!chatMetadata || !Array.isArray(chatMetadata.favorites)) {
-        console.warn(`${pluginName}: refreshFavoriteIconsInView - 无法获取有效的 chatMetadata 或 favorites 数组`);
-        // 即使没有收藏，也要确保图标是空心状态
+        console.warn(`${pluginName}: refreshFavoriteIconsInView - Cannot get valid chatMetadata or favorites array. Setting all icons to default.`);
+        // Ensure all icons are in the default (not favorited) state
         $('#chat').find('.favorite-toggle-icon i').removeClass('fa-solid').addClass('fa-regular');
         return;
     }
 
-    // 确保所有消息都有图标结构
+    // Make sure all messages have the icon structure first
     addFavoriteIconsToMessages();
 
-    // 更新图标状态
+    // Create a set of favorited message IDs for efficient lookup
+    const favoritedMessageIds = new Set(chatMetadata.favorites.map(fav => fav.messageId));
+
+    // Update icon state based on whether the messageId is in the set
     $('#chat').find('.mes').each(function() {
         const messageElement = $(this);
-        const messageId = messageElement.attr('mesid'); // 获取 mesid 字符串
+        const messageId = messageElement.attr('mesid'); // Get mesid string
 
         if (messageId) {
-            // 使用 chatMetadata.favorites 进行检查 (对比 messageId 字符串)
-            const isFavorited = chatMetadata.favorites.some(fav => fav.messageId === messageId);
-
+            const isFavorited = favoritedMessageIds.has(messageId);
             const iconElement = messageElement.find('.favorite-toggle-icon i');
+
             if (iconElement.length) {
                 if (isFavorited) {
                     iconElement.removeClass('fa-regular').addClass('fa-solid');
@@ -361,61 +359,62 @@ function refreshFavoriteIconsInView() {
  * @returns {string} HTML string for the favorite item
  */
 function renderFavoriteItem(favItem, index) {
-    // 使用 favItem.messageId (mesid 字符串) 来查找消息
+    // Uses favItem.messageId (mesid string) to find the message
     if (!favItem) return '';
 
     const context = getContext();
     let message = null;
     if (context.chat && Array.isArray(context.chat)) {
-         // 查找 mesid 属性匹配 favItem.messageId 的消息
+         // Find message where mesid attribute matches favItem.messageId
          message = context.chat.find(msg => String($(msg).attr?.('mesid')) === String(favItem.messageId));
-         // 如果找不到，尝试用消息索引作为 messageId 来查找 (兼容旧数据或特殊情况)
+         // Fallback: Try finding by index if messageId happens to be index (less common)
          if (!message) {
              const messageIndex = parseInt(favItem.messageId, 10);
              if (!isNaN(messageIndex) && context.chat[messageIndex]) {
                  message = context.chat[messageIndex];
              }
          }
-         // 最终回退，尝试按 msg.id 查找（如果存在的话）
+         // Final fallback: Try finding by msg.id property (if it exists)
          if (!message) {
              message = context.chat.find(msg => String(msg.id) === String(favItem.messageId));
          }
     }
 
-
     let previewText = '';
     let deletedClass = '';
 
-    if (message && message.mes) { // 增加对 message.mes 的检查
-        // 使用 messageFormatting 创建文本预览（可能截断）
+    if (message && typeof message.mes === 'string') { // Check message.mes exists and is a string
+        // Use messageFormatting for a text preview (potentially truncated)
         try {
-             // 先获取完整文本
+             // Get the full message text first
              let fullText = message.mes;
-             // 手动截断以生成摘要预览，保留原始格式化逻辑
-             if (fullText.length > 100) {
+             // Manually truncate for the summary preview in the list, keeping original formatting logic goal
+             if (fullText.length > 100) { // Truncation limit for preview
                  fullText = fullText.substring(0, 100) + '...';
              }
-             previewText = messageFormatting(fullText, favItem.sender, false,
-                                            favItem.role === 'user', null, {}, false);
+             // Format the (potentially truncated) text
+             previewText = messageFormatting(fullText, favItem.sender, false, // false for isStream
+                                            favItem.role === 'user', null, {}, false); // false for parseTextarea
         } catch (e) {
-             console.error(`${pluginName}: Error formatting message preview:`, e);
+             console.error(`${pluginName}: Error formatting message preview for ${favItem.messageId}:`, e);
              // Fallback to truncated plain text if formatting fails
              previewText = message.mes.substring(0, 100) + (message.mes.length > 100 ? '...' : '');
+             previewText = $('<div>').text(previewText).html(); // Basic HTML escaping for safety
         }
     } else {
-        previewText = '[消息内容不可用或已删除]'; // 更清晰的提示
+        previewText = '[消息内容不可用或已删除]'; // Clearer indication
         deletedClass = 'deleted';
     }
 
-    // 返回的 HTML 结构中，在 fav-actions div 内添加预览按钮
+    // Return HTML structure including the new preview button
     return `
         <div class="favorite-item" data-fav-id="${favItem.id}" data-msg-id="${favItem.messageId}" data-index="${index}">
             <div class="fav-meta">${favItem.sender} (${favItem.role})</div>
             <div class="fav-note" style="${favItem.note ? '' : 'display:none;'}">备注：${favItem.note || ''}</div>
-            {/* 这个 div 显示格式化后的截断预览 */}
+            {/* This div shows the formatted, truncated preview */}
             <div class="fav-preview ${deletedClass}">${previewText}</div>
             <div class="fav-actions">
-                <i class="fa-solid fa-eye preview-fav" title="预览上下文"></i> {/* 新增预览按钮 */}
+                <i class="fa-solid fa-eye preview-fav" title="预览上下文"></i> {/* Preview button */}
                 <i class="fa-solid fa-pencil" title="编辑备注"></i>
                 <i class="fa-solid fa-trash" title="删除收藏"></i>
             </div>
@@ -428,36 +427,44 @@ function renderFavoriteItem(favItem, index) {
  */
 function updateFavoritesPopup() {
     const chatMetadata = ensureFavoritesArrayExists();
-    if (!favoritesPopup || !chatMetadata) {
-        console.error(`${pluginName}: updateFavoritesPopup - Popup not ready or chatMetadata missing.`);
-        return;
-    }
-    if (!favoritesPopup.content) {
-        console.error(`${pluginName}: updateFavoritesPopup - favoritesPopup.content is null or undefined! Cannot update.`);
+    // Ensure popup exists and its content container is accessible
+    if (!favoritesPopup || !favoritesPopup.content || !chatMetadata) {
+        console.error(`${pluginName}: updateFavoritesPopup - Popup not ready, content container missing, or chatMetadata missing.`);
         return;
     }
     console.log(`${pluginName}: updateFavoritesPopup - favoritesPopup.content element:`, favoritesPopup.content);
 
 
     const context = getContext();
-    // 确保 context 和相关属性存在
-    const chatName = context?.characterId
-        ? context.name2
-        : `群组: ${context?.groups?.find(g => g.id === context.groupId)?.name || '未命名群组'}`;
+    // Safely access context properties
+    const characterName = context?.name2;
+    const groupName = context?.groups?.find(g => g.id === context.groupId)?.name || '未命名群组';
+    const chatName = context?.characterId ? characterName : `群组: ${groupName}`;
     const totalFavorites = chatMetadata.favorites ? chatMetadata.favorites.length : 0;
-    // 按 messageId (字符串，但内容是数字) 降序排序
-    const sortedFavorites = chatMetadata.favorites ? [...chatMetadata.favorites].sort((a, b) => parseInt(b.messageId) - parseInt(a.messageId)) : [];
+
+    // Sort favorites by messageId (assuming they are numeric strings) in descending order
+    const sortedFavorites = chatMetadata.favorites ? [...chatMetadata.favorites].sort((a, b) => {
+        const idA = parseInt(a.messageId, 10);
+        const idB = parseInt(b.messageId, 10);
+        // Handle potential NaN values if messageId is not purely numeric
+        if (isNaN(idA) && isNaN(idB)) return 0;
+        if (isNaN(idA)) return 1; // Put non-numeric IDs last
+        if (isNaN(idB)) return -1;
+        return idB - idA; // Descending numeric sort
+    }) : [];
 
     const totalPages = Math.max(1, Math.ceil(totalFavorites / itemsPerPage));
-    if (currentPage > totalPages) currentPage = totalPages;
+    // Ensure currentPage is within valid bounds
+    currentPage = Math.max(1, Math.min(currentPage, totalPages));
+
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = Math.min(startIndex + itemsPerPage, totalFavorites);
     const currentPageItems = sortedFavorites.slice(startIndex, endIndex);
 
     let contentHtml = `
-        <div id="favorites-popup-content">
+        <div id="favorites-popup-content"> {/* Use an ID for potential specific styling */}
             <div class="favorites-header">
-                <h3>${chatName} - ${totalFavorites} 条收藏</h3>
+                <h3>${$('<div>').text(chatName).html()} - ${totalFavorites} 条收藏</h3> {/* Basic HTML escaping for name */}
             </div>
             <div class="favorites-divider"></div>
             <div class="favorites-list">
@@ -467,9 +474,10 @@ function updateFavoritesPopup() {
         contentHtml += `<div class="favorites-empty">当前没有收藏的消息。点击消息右下角的星形图标来添加收藏。</div>`;
     } else {
         currentPageItems.forEach((favItem, index) => {
-            contentHtml += renderFavoriteItem(favItem, startIndex + index);
+            contentHtml += renderFavoriteItem(favItem, startIndex + index); // Render each item
         });
 
+        // Add pagination controls if more than one page
         if (totalPages > 1) {
             contentHtml += `<div class="favorites-pagination">`;
             contentHtml += `<button class="menu_button pagination-prev" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>`;
@@ -488,8 +496,9 @@ function updateFavoritesPopup() {
         </div>
     `;
 
+    // Update the popup's content container's innerHTML
     try {
-        favoritesPopup.content.innerHTML = contentHtml; // 直接修改 DOM 元素的 innerHTML
+        favoritesPopup.content.innerHTML = contentHtml;
         console.log(`${pluginName}: Popup content updated using innerHTML.`);
     } catch (error) {
          console.error(`${pluginName}: Error setting popup innerHTML:`, error);
@@ -504,25 +513,29 @@ function showFavoritesPopup() {
         // Create a new popup if it doesn't exist
         try {
             favoritesPopup = new Popup(
-                '<div class="spinner"></div>', // Initial content while loading
-                POPUP_TYPE.TEXT,
-                '',
+                '<div class="spinner"></div>', // Initial placeholder content
+                POPUP_TYPE.DISPLAY, // Use DISPLAY type initially, as we manage content/buttons manually
+                '', // No initial input value
                 {
-                    title: '收藏管理',
-                    wide: true,
-                    okButton: false,
-                    cancelButton: false,
-                    allowVerticalScrolling: true // Keep vertical scrolling
+                    title: '收藏管理', // Set title via options if Popup supports it, otherwise manage manually
+                    wide: true, // Use wide layout
+                    okButton: false, // Hide default OK button
+                    cancelButton: false, // Hide default Cancel button
+                    allowVerticalScrolling: true, // Allow vertical scroll within the content
+                    // Note: POPUP_TYPE.DISPLAY might show a close 'X' button by default.
+                    // We add our own 'Close' button in the footer.
+                    // If POPUP_TYPE.TEXT is used, ensure ok/cancel are explicitly false.
                 }
             );
 
-            console.log(`${pluginName}: Popup instance created successfully.`);
+            console.log(`${pluginName}: New Popup instance created successfully.`);
 
-            // Attach event listener to the popup's content container
+            // Attach event listener to the popup's content container for delegated events
             $(favoritesPopup.content).on('click', function(event) {
                 const target = $(event.target);
+                const favItemElement = target.closest('.favorite-item'); // Find parent item if click was inside
 
-                // Handle pagination
+                // Handle pagination buttons
                 if (target.hasClass('pagination-prev')) {
                     if (currentPage > 1) {
                         currentPage--;
@@ -537,68 +550,78 @@ function showFavoritesPopup() {
                         updateFavoritesPopup();
                     }
                 }
-                // Handle close button
+                // Handle custom close button in the footer
                 else if (target.hasClass('close-popup')) {
-                    favoritesPopup.hide();
+                    // Use the Popup's internal method if available, otherwise hide dlg directly
+                    if (typeof favoritesPopup.completeCancelled === 'function') {
+                        favoritesPopup.completeCancelled(); // Preferred way to close cleanly
+                    } else {
+                        favoritesPopup.dlg.close(); // Fallback
+                    }
                 }
                 // Handle clear invalid button
                 else if (target.hasClass('clear-invalid')) {
                     handleClearInvalidFavorites();
                 }
-                // Handle edit note (pencil icon)
-                else if (target.hasClass('fa-pencil')) {
-                    const favItem = target.closest('.favorite-item');
-                    if (favItem && favItem.length) {
-                         const favId = favItem.data('fav-id');
-                         handleEditNote(favId);
-                    } else {
-                         console.warn(`${pluginName}: Clicked edit icon, but couldn't find parent .favorite-item`);
+                // Handle actions on favorite items (edit, delete, preview)
+                else if (favItemElement && favItemElement.length) {
+                    const favId = favItemElement.data('fav-id');
+                    const msgId = favItemElement.data('msg-id');
+
+                    // Handle edit note (pencil icon)
+                    if (target.hasClass('fa-pencil')) {
+                        handleEditNote(favId);
                     }
-                }
-                // Handle delete favorite (trash icon)
-                else if (target.hasClass('fa-trash')) {
-                    const favItem = target.closest('.favorite-item');
-                    if (favItem && favItem.length) {
-                        const favId = favItem.data('fav-id');
-                        const msgId = favItem.data('msg-id');
+                    // Handle delete favorite (trash icon)
+                    else if (target.hasClass('fa-trash')) {
                         handleDeleteFavoriteFromPopup(favId, msgId);
-                    } else {
-                         console.warn(`${pluginName}: Clicked delete icon, but couldn't find parent .favorite-item`);
+                    }
+                    // Handle preview context (eye icon)
+                    else if (target.hasClass('preview-fav')) {
+                        console.log(`${pluginName}: Preview context requested for msgId: ${msgId}`);
+                        handlePreviewFavoriteContext(msgId);
                     }
                 }
-                // *** NEW: Handle preview context (eye icon) ***
-                else if (target.hasClass('preview-fav')) {
-                    const favItem = target.closest('.favorite-item');
-                    if (favItem && favItem.length) {
-                        const msgId = favItem.data('msg-id'); // Get messageId (mesid string)
-                        console.log(`${pluginName}: Preview context requested for msgId: ${msgId}`);
-                        handlePreviewFavoriteContext(msgId); // Call the new handler function
-                    } else {
-                         console.warn(`${pluginName}: Clicked preview icon, but couldn't find parent .favorite-item`);
-                    }
+                 else {
+                    // Log clicks not handled if needed for debugging
+                    // console.log(`${pluginName}: Unhandled click inside popup content on:`, target);
                 }
             });
 
         } catch (error) {
             console.error(`${pluginName}: Failed during popup creation or event listener setup:`, error);
             favoritesPopup = null; // Reset on failure
+            callGenericPopup('创建收藏夹弹窗时出错。', POPUP_TYPE.ERROR); // Inform user
             return;
         }
     } else {
          console.log(`${pluginName}: Reusing existing popup instance.`);
     }
 
+    // Reset to page 1 and update content every time it's shown
     currentPage = 1;
-    updateFavoritesPopup(); // Update content immediately
+    updateFavoritesPopup();
 
-    if (favoritesPopup && !favoritesPopup.isVisible()) { // Only show if not already visible
+    // *** CORRECTED VISIBILITY CHECK ***
+    // Check if the popup instance exists and its underlying dialog element is NOT open
+    if (favoritesPopup && favoritesPopup.dlg && !favoritesPopup.dlg.open) {
         try {
-            favoritesPopup.show();
+            // Use the show method of the Popup instance
+            favoritesPopup.show().catch(err => {
+                // Catch potential errors from the show promise itself (e.g., if closed unexpectedly)
+                console.error(`${pluginName}: Error occurred after showing popup:`, err);
+            });
         } catch(showError) {
-             console.error(`${pluginName}: Error showing popup:`, showError);
+             console.error(`${pluginName}: Error calling favoritesPopup.show():`, showError);
              // Optionally reset popup if show fails critically
-             // favoritesPopup = null;
+             favoritesPopup = null;
+             callGenericPopup('显示收藏夹弹窗时出错。', POPUP_TYPE.ERROR);
         }
+    } else if (favoritesPopup && favoritesPopup.dlg && favoritesPopup.dlg.open) {
+        // If already open, maybe bring to front or just log
+        console.log(`${pluginName}: Popup is already open.`);
+        // Optionally try to focus it:
+        favoritesPopup.dlg.focus();
     }
 }
 
@@ -623,25 +646,13 @@ async function handlePreviewFavoriteContext(targetMessageId) {
         return;
     }
 
-    // Find the index of the target message using its mesid string
+    // Find the index of the target message using its mesid string attribute
     const targetIndex = context.chat.findIndex(msg => String($(msg).attr?.('mesid')) === targetMessageId);
 
     if (targetIndex === -1) {
         console.error(`${pluginName}: handlePreviewFavoriteContext - Message with mesid ${targetMessageId} not found in chat array.`);
-        // Try finding by index if targetMessageId happens to be the index (less likely but for robustness)
-        const numericId = parseInt(targetMessageId, 10);
-        if (!isNaN(numericId) && context.chat[numericId]) {
-             console.log(`${pluginName}: handlePreviewFavoriteContext - Found message by index ${numericId} as fallback.`);
-             // If found by index, we proceed with numericId as targetIndex
-             // This case is less likely if mesid is always used
-             // Re-assign targetIndex for clarity if needed, or just use numericId directly below
-             // targetIndex = numericId; // Let's assume mesid is the primary identifier
-             await callGenericPopup(`在当前聊天中未直接找到消息ID ${targetMessageId}，请检查数据一致性。`, POPUP_TYPE.WARNING);
-             return; // Exit if primary lookup failed
-        } else {
-            await callGenericPopup(`在当前聊天中未找到原始消息 (ID: ${targetMessageId})。`, POPUP_TYPE.WARNING);
-            return;
-        }
+        await callGenericPopup(`在当前聊天中未找到原始消息 (ID: ${targetMessageId})。`, POPUP_TYPE.WARNING);
+        return;
     }
 
     console.log(`${pluginName}: handlePreviewFavoriteContext - Found target message at index: ${targetIndex}`);
@@ -651,19 +662,24 @@ async function handlePreviewFavoriteContext(targetMessageId) {
     if (targetIndex > 0) {
         messagesToPreview.push(context.chat[targetIndex - 1]);
     } else {
-        messagesToPreview.push(null); // Placeholder for alignment if needed, or omit
+        messagesToPreview.push(null); // Use null as placeholder if no previous message
     }
     messagesToPreview.push(context.chat[targetIndex]); // The target message
     if (targetIndex < context.chat.length - 1) {
         messagesToPreview.push(context.chat[targetIndex + 1]);
     } else {
-        messagesToPreview.push(null); // Placeholder
+        messagesToPreview.push(null); // Use null as placeholder if no next message
     }
 
-    // Filter out null placeholders if any were added
+    // Filter out the null placeholders
     const validMessages = messagesToPreview.filter(msg => msg !== null);
     console.log(`${pluginName}: handlePreviewFavoriteContext - Messages to preview (count: ${validMessages.length}):`, validMessages);
 
+    if (validMessages.length === 0) {
+        console.warn(`${pluginName}: handlePreviewFavoriteContext - No valid messages found to preview.`);
+        await callGenericPopup('无法找到有效的消息进行预览。', POPUP_TYPE.WARNING);
+        return;
+    }
 
     // Open new tab
     const previewWindow = window.open('', '_blank');
@@ -674,43 +690,47 @@ async function handlePreviewFavoriteContext(targetMessageId) {
 
     // Construct HTML for the new tab
     // *** IMPORTANT: VERIFY THESE CSS PATHS FOR YOUR SILLYTAVERN INSTALLATION ***
+    // These paths are common but might differ based on setup or version.
     const cssPaths = [
-        'css/style.css',          // Main ST styles
-        'css/themes.css',         // Theme definitions
-        'css/font-awesome/css/all.min.css', // Font Awesome icons
-        // Add the path to your *currently active* theme CSS if possible and known
-        // e.g., 'css/themes/your-active-theme.css' - this might be hard to get dynamically
-        // Alternatively, rely on themes.css and the classes it applies based on body attributes
+        '/css/style.css',          // Main ST styles
+        '/css/themes.css',         // Theme definitions (contains variables)
+        '/css/font-awesome/css/all.min.css', // Font Awesome icons (if used by messages)
+        // Try to find the currently active theme CSS file path. This is difficult.
+        // We can get the theme name from settings, but mapping it to a file path reliably is tricky.
+        // Best bet is to rely on style.css and themes.css + body class.
     ];
-    // Generate links relative to the root of the SillyTavern instance
-    let cssLinks = cssPaths.map(path => `<link rel="stylesheet" href="/${path}">`).join('\n    ');
+    let cssLinks = cssPaths.map(path => `<link rel="stylesheet" href="${path}">`).join('\n    ');
 
-    // Basic fallback styles if external CSS fails to load
+    // Basic fallback styles if external CSS fails
+    // (Keep these updated based on core SillyTavern structure if possible)
     const fallbackStyles = `
         body { background-color: #2c2f33; color: #cccccc; font-family: 'Arial', sans-serif; padding: 15px; line-height: 1.6; }
         .mes_container { max-width: 900px; margin: 20px auto; border: 1px solid #444; border-radius: 8px; background-color: #23272a; padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        h2, p { color: #ffffff; text-align: center; }
+        h2, p.preview-info { color: #ffffff; text-align: center; }
         hr { border: 0; height: 1px; background-color: #444; margin: 20px 0; }
-        .mes { display: flex; margin-bottom: 15px; align-items: flex-start; }
-        .avatar { flex-shrink: 0; margin-right: 12px; }
-        .avatar img { width: 45px; height: 45px; border-radius: 50%; border: 1px solid #555; }
-        .mes_inner { background-color: #36393f; border-radius: 8px; padding: 10px 15px; flex-grow: 1; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; } /* Added overflow */
-        .mes_name { font-weight: bold; margin-bottom: 5px; color: #99aab5; font-size: 0.9em; }
-        .mes_text { color: #dcddde; word-wrap: break-word; white-space: pre-wrap; font-size: 1em; }
-        /* Try to mimic user/char distinction */
-        .char_mes .mes_name { color: #7289da; } /* Example color */
-        .user_mes { flex-direction: row-reverse; } /* User message on the right */
+        .mes { display: flex; margin-bottom: 15px; align-items: flex-start; flex-wrap: nowrap; } /* Ensure no wrap */
+        .avatar { flex-shrink: 0; margin-right: 12px; width: 45px; height: 45px; }
+        .avatar img { width: 100%; height: 100%; border-radius: 50%; border: 1px solid #555; object-fit: cover; }
+        .mes_inner { border-radius: 8px; padding: 0; /* Remove padding here, apply to name/text */ flex-grow: 1; overflow: hidden; /* Prevent content spill */ }
+        .mes_name { font-weight: bold; margin-bottom: 5px; color: #99aab5; font-size: 0.9em; padding: 8px 15px 0 15px; /* Pad name */ }
+        .mes_text { color: #dcddde; word-wrap: break-word; white-space: pre-wrap; font-size: 1em; padding: 0 15px 8px 15px; /* Pad text */}
+        .mes_text img { max-width: 100%; height: auto; display: block; margin-top: 5px; border-radius: 4px; } /* Style images inside text */
+        /* User/Char distinction (simplified) */
+        .char_mes .mes_inner { background-color: #36393f; }
+        .char_mes .mes_name { color: #7289da; }
+        .user_mes { flex-direction: row-reverse; }
         .user_mes .avatar { margin-right: 0; margin-left: 12px; }
         .user_mes .mes_inner { background-color: #4f545c; }
-        .user_mes .mes_name { text-align: right; }
-        .system_mes .mes_inner { background-color: rgba(255, 193, 7, 0.1); border-left: 3px solid #ffc107; font-style: italic; color: #ffebae; }
+        .user_mes .mes_name { text-align: right; color: #aaa; /* User name color */ }
+        .system_mes .mes_inner { background-color: rgba(255, 193, 7, 0.1); border-left: 3px solid #ffc107; }
         .system_mes .mes_name { color: #ffc107; }
-        /* Target the specific message */
-        .target-message .mes_inner { border: 2px solid #ffcc00; /* Highlight */ }
+        .system_mes .mes_text { font-style: italic; color: #ffebae; }
+        /* Highlight the target message */
+        .target-message .mes_inner { outline: 2px solid #ffcc00; outline-offset: -2px; /* Highlight */ }
     `;
 
-    // Determine current theme class for body (best effort)
-    const themeClass = $('body').attr('class') || ''; // Get classes from main body
+    // Try to get theme class from main body to apply in new tab
+    const themeClass = $('body').attr('class') || ''; // Get all classes
 
     let previewHtml = `
 <!DOCTYPE html>
@@ -724,27 +744,38 @@ async function handlePreviewFavoriteContext(targetMessageId) {
         ${fallbackStyles} {/* Inline fallback styles */}
     </style>
 </head>
-<body class="${themeClass}"> {/* Apply theme class if found */}
+<body class="${themeClass}"> {/* Apply theme class(es) if found */}
     <div class="mes_container">
         <h2>消息上下文预览</h2>
-        <p><i>这是收藏的消息 (ID: ${targetMessageId}) 及其相邻消息的快照。外观取决于样式表的加载情况。</i></p>
+        <p class="preview-info"><i>这是收藏的消息 (ID: ${targetMessageId}) 及其相邻消息的快照。外观取决于样式表的加载情况。</i></p>
         <hr>
 `;
 
         validMessages.forEach(msg => {
-            if (!msg) return; // Should already be filtered, but double-check
+            if (!msg) return; // Should already be filtered
 
             const msgId = String($(msg).attr?.('mesid')); // Get the message ID for highlighting
             const isUser = msg.is_user;
             const isSystem = msg.is_system; // Check for system message flag
-            const senderName = msg.name || (isUser ? 'User' : (isSystem ? 'System' : 'Character'));
+            const senderName = msg.name ? $('<div>').text(msg.name).html() : (isUser ? 'User' : (isSystem ? 'System' : 'Character')); // Escape sender name
             // *** IMPORTANT: Verify these avatar paths ***
-            const defaultUserAvatar = '/img/user-default.png';
-            const defaultCharAvatar = '/img/character-default.png'; // Assuming a generic char default exists
-            const avatarSrc = msg.avatar || (isUser ? defaultUserAvatar : (msg.pic || defaultCharAvatar)); // Use character pic if available, else default
+            const defaultUserAvatar = '/img/user-default.png'; // Default user avatar path in ST
+            const defaultCharAvatar = '/img/ai-default.png';  // Default AI/Char avatar path in ST
+            // Use character's specific picture (msg.pic), fallback to default based on type
+            let avatarSrc = defaultCharAvatar; // Default to AI
+            if(isUser) {
+                avatarSrc = msg.avatar || defaultUserAvatar; // User uses avatar field or user default
+            } else if (!isSystem) {
+                avatarSrc = msg.pic || defaultCharAvatar; // Character uses pic field or AI default
+            } else {
+                 avatarSrc = ''; // System messages might not have an avatar
+            }
+             // Basic escaping for the src attribute itself
+             avatarSrc = avatarSrc ? $('<div>').attr('src', avatarSrc).attr('src') : '';
 
-            // Use the raw 'mes' content directly. The browser will render the HTML within.
-            const mesContent = msg.mes || '[空消息]';
+
+            // Directly use the raw 'mes' content. The browser renders the HTML within.
+            const mesContent = typeof msg.mes === 'string' ? msg.mes : '[空消息或无效内容]';
 
             let mesClasses = 'mes';
             if (isUser) mesClasses += ' user_mes';
@@ -756,12 +787,13 @@ async function handlePreviewFavoriteContext(targetMessageId) {
                  mesClasses += ' target-message';
             }
 
-
             previewHtml += `
             <div class="${mesClasses}" mesid="${msgId || ''}">
+                ${avatarSrc ? `
                 <div class="avatar">
-                    <img src="${avatarSrc}" alt="${senderName}" onerror="this.style.display='none'"> {/* Hide if image fails */}
+                    <img src="${avatarSrc}" alt="${senderName.replace(/"/g, '"')}" onerror="this.style.display='none'">
                 </div>
+                ` : '<div class="avatar"></div>' /* Placeholder if no avatar */}
                 <div class="mes_inner">
                     <div class="mes_name">${senderName}</div>
                     {/* Directly insert the original message HTML content */}
@@ -778,11 +810,17 @@ async function handlePreviewFavoriteContext(targetMessageId) {
 `;
 
         // Write content to the new tab
-        previewWindow.document.open();
-        previewWindow.document.write(previewHtml);
-        previewWindow.document.close();
-        console.log(`${pluginName}: handlePreviewFavoriteContext - Preview tab content written.`);
-        previewWindow.focus(); // Bring the new tab to the front
+        try {
+            previewWindow.document.open();
+            previewWindow.document.write(previewHtml);
+            previewWindow.document.close();
+            console.log(`${pluginName}: handlePreviewFavoriteContext - Preview tab content written.`);
+            previewWindow.focus(); // Bring the new tab to the front
+        } catch (writeError) {
+             console.error(`${pluginName}: Error writing to preview window:`, writeError);
+             await callGenericPopup('写入预览内容时出错。', POPUP_TYPE.ERROR);
+             try { previewWindow.close(); } catch {} // Try to close the potentially broken window
+        }
     }
 
 
@@ -792,9 +830,10 @@ async function handlePreviewFavoriteContext(targetMessageId) {
  * @param {string} messageId The message ID (mesid string)
  */
 async function handleDeleteFavoriteFromPopup(favId, messageId) {
-    const confirmResult = await callGenericPopup('确定要删除这条收藏吗？', POPUP_TYPE.CONFIRM);
+    // Use callGenericPopup for confirmation
+    const confirmResult = await callGenericPopup(`确定要删除这条收藏吗？\n(消息 ID: ${messageId})`, POPUP_TYPE.CONFIRM);
 
-    if (confirmResult === POPUP_RESULT.YES) {
+    if (confirmResult === POPUP_RESULT.AFFIRMATIVE) { // Check for affirmative result
         if (removeFavoriteById(favId)) { // This function handles saving
             updateFavoritesPopup(); // Update the popup list
 
@@ -806,7 +845,13 @@ async function handleDeleteFavoriteFromPopup(favId, messageId) {
                     iconElement.removeClass('fa-solid').addClass('fa-regular');
                 }
             }
+            // Optionally show a success toast/popup
+            // toastr.success('收藏已删除');
+        } else {
+             await callGenericPopup('删除收藏失败。', POPUP_TYPE.ERROR);
         }
+    } else {
+        console.log(`${pluginName}: Deletion cancelled by user for favId ${favId}`);
     }
 }
 
@@ -819,21 +864,30 @@ async function handleEditNote(favId) {
     if (!chatMetadata || !Array.isArray(chatMetadata.favorites)) return;
 
     const favorite = chatMetadata.favorites.find(fav => fav.id === favId);
-    if (!favorite) return;
+    if (!favorite) {
+        console.warn(`${pluginName}: handleEditNote - Favorite with id ${favId} not found.`);
+        await callGenericPopup('找不到要编辑的收藏项。', POPUP_TYPE.WARNING);
+        return;
+    }
 
-    const result = await callGenericPopup('为这条收藏添加备注:', POPUP_TYPE.INPUT, favorite.note || '');
+    // Use callGenericPopup for input
+    const result = await callGenericPopup('为这条收藏添加或编辑备注:', POPUP_TYPE.INPUT, favorite.note || '');
 
-    // Check if the user confirmed (result is not null and not explicitly cancelled)
-    // Note: POPUP_RESULT.CANCELLED might vary based on popup implementation, null check is safer
-    if (result !== null) { // Allow empty string as a valid note
-        updateFavoriteNote(favId, result); // This function handles saving
+    // Check if the user confirmed (result is the input string, or '' for empty input)
+    // Result will be null if cancelled, false if negative button clicked (though INPUT usually only has OK/Cancel)
+    if (result !== null && result !== false) {
+        updateFavoriteNote(favId, String(result)); // Ensure result is a string, handles saving
         updateFavoritesPopup(); // Update the popup list to show the new note
+        // Optionally show success toast
+        // toastr.success('备注已更新');
+    } else {
+         console.log(`${pluginName}: Note edit cancelled for favId ${favId}`);
     }
 }
 
 
 /**
- * Clears invalid favorites (those referencing deleted messages)
+ * Clears invalid favorites (those referencing non-existent messages)
  * Uses messageId (mesid string) for checking existence.
  */
 async function handleClearInvalidFavorites() {
@@ -849,17 +903,17 @@ async function handleClearInvalidFavorites() {
          return;
     }
 
-    const invalidFavoritesIds = []; // Store IDs of invalid favorites
+    const invalidFavoritesData = []; // Store { id, messageId } of invalid favorites
     const validFavorites = [];    // Store valid favorite items
 
-    // Create a set of existing message IDs (mesid strings) for quick lookup
+    // Create a set of existing message IDs (mesid strings) from the current chat for quick lookup
     const existingMessageIds = new Set();
     context.chat.forEach(msg => {
         const mesid = $(msg).attr?.('mesid');
         if (mesid) {
             existingMessageIds.add(String(mesid));
         }
-        // Also consider msg.id if it's used sometimes
+        // Also consider msg.id if it might be used as messageId in favorites
         if (msg.id) {
              existingMessageIds.add(String(msg.id));
         }
@@ -870,28 +924,31 @@ async function handleClearInvalidFavorites() {
         if (existingMessageIds.has(String(fav.messageId))) {
             validFavorites.push(fav); // Keep valid favorite
         } else {
-            invalidFavoritesIds.push(fav.id); // Mark favorite ID as invalid
+            invalidFavoritesData.push({ id: fav.id, messageId: fav.messageId }); // Mark favorite as invalid
             console.log(`${pluginName}: Found invalid favorite referencing messageId: ${fav.messageId}`);
         }
     });
 
-    if (invalidFavoritesIds.length === 0) {
+    if (invalidFavoritesData.length === 0) {
         await callGenericPopup('没有找到无效的收藏项。', POPUP_TYPE.TEXT);
         return;
     }
 
+    // Confirm deletion with the user
     const confirmResult = await callGenericPopup(
-        `发现 ${invalidFavoritesIds.length} 条引用无效或已删除消息的收藏项。确定要删除这些无效收藏吗？`,
-        POPUP_TYPE.CONFIRM
+        `发现 ${invalidFavoritesData.length} 条引用无效或已删除消息的收藏项。确定要删除这些无效收藏吗？`,
+        POPUP_TYPE.CONFIRM // Use CONFIRM type
     );
 
-    if (confirmResult === POPUP_RESULT.YES) {
+    if (confirmResult === POPUP_RESULT.AFFIRMATIVE) { // Check for affirmative result
         chatMetadata.favorites = validFavorites; // Replace with the filtered list
         saveMetadataDebounced(); // Save the changes
 
-        await callGenericPopup(`已成功清理 ${invalidFavoritesIds.length} 条无效收藏。`, POPUP_TYPE.TEXT);
+        await callGenericPopup(`已成功清理 ${invalidFavoritesData.length} 条无效收藏。`, POPUP_TYPE.TEXT);
         updateFavoritesPopup(); // Update the popup display
-        refreshFavoriteIconsInView(); // Refresh icons in chat in case any were for deleted items
+        refreshFavoriteIconsInView(); // Refresh icons in chat
+    } else {
+        console.log(`${pluginName}: Clearing invalid favorites cancelled by user.`);
     }
 }
 
@@ -911,139 +968,153 @@ jQuery(async () => {
             $('#data_bank_wand_container').append(inputButtonHtml);
             console.log(`${pluginName}: 已将按钮添加到 #data_bank_wand_container`);
 
+            // Attach click listener to the newly added button
             $('#favorites_button').on('click', () => {
+                console.log(`${pluginName}: Favorites button clicked.`);
                 showFavoritesPopup();
             });
         } catch (error) {
             console.error(`${pluginName}: 加载或注入 input_button.html 失败:`, error);
         }
 
-        // Add settings to extension settings area
+        // Add settings display to extension settings area
         try {
             const settingsHtml = await renderExtensionTemplateAsync(`third-party/${pluginName}`, 'settings_display');
-            $('#extensions_settings').append(settingsHtml); // Append to the general extensions settings container
+            // Append to a standard container for extension settings if available
+            $('#extensions_settings').append(settingsHtml);
             console.log(`${pluginName}: 已将设置 UI 添加到 #extensions_settings`);
+            // Make settings collapsible (assuming inline-drawer structure from HTML)
+            $('.inline-drawer-toggle').on('click', function () {
+                $(this).closest('.inline-drawer').toggleClass('open');
+            });
         } catch (error) {
             console.error(`${pluginName}: 加载或注入 settings_display.html 失败:`, error);
         }
 
-        // Set up event delegation for favorite toggle icon clicks on the document
+        // Set up event delegation for favorite toggle icon clicks anywhere on the document
         $(document).on('click', '.favorite-toggle-icon', handleFavoriteToggle);
 
         // Initialize favorites array for the current chat when the plugin loads
         ensureFavoritesArrayExists(); // Attempt initialization
 
         // Initial UI setup: Add icons to existing messages and set their correct state
-        addFavoriteIconsToMessages();
-        refreshFavoriteIconsInView();
+        // Delay slightly to ensure DOM is ready after initial load
+        setTimeout(() => {
+            addFavoriteIconsToMessages();
+            refreshFavoriteIconsInView();
+        }, 200);
+
 
         // --- Event Listeners ---
         eventSource.on(event_types.CHAT_CHANGED, () => {
-            console.log(`${pluginName}: 聊天已更改，更新收藏图标...`);
+            console.log(`${pluginName}: Event ${event_types.CHAT_CHANGED} detected.`);
             ensureFavoritesArrayExists(); // Ensure the array exists for the new chat
+            // Delay updates to allow ST to fully render the new chat
             setTimeout(() => {
                 addFavoriteIconsToMessages(); // Add icons structure to potentially new messages
                 refreshFavoriteIconsInView(); // Update all icons based on the new chat's metadata
-            }, 150); // Slightly longer delay for chat changes
+                 // Close the popup if it's open when chat changes, as context is lost
+                 if (favoritesPopup && favoritesPopup.dlg && favoritesPopup.dlg.open) {
+                    console.log(`${pluginName}: Closing favorites popup due to chat change.`);
+                     if (typeof favoritesPopup.completeCancelled === 'function') {
+                        favoritesPopup.completeCancelled();
+                     } else {
+                        favoritesPopup.dlg.close();
+                     }
+                 }
+            }, 300); // Increased delay for chat changes
         });
 
         eventSource.on(event_types.MESSAGE_DELETED, (deletedMessageData) => {
-            // deletedMessageData might be index or { index: number, id: string }
-            // We need the mesid string if available, otherwise the index as string
+             console.log(`${pluginName}: Event ${event_types.MESSAGE_DELETED} detected with data:`, deletedMessageData);
+            // Extract the message ID (mesid string) or index string
             let deletedMessageId = null;
             if (typeof deletedMessageData === 'object' && deletedMessageData.id) {
-                deletedMessageId = String(deletedMessageData.id); // Prefer the mesid if provided
+                deletedMessageId = String(deletedMessageData.id); // Prefer the mesid string if provided
             } else if (typeof deletedMessageData === 'number') {
                 deletedMessageId = String(deletedMessageData); // Fallback to index as string
+            } else if (typeof deletedMessageData === 'string') {
+                deletedMessageId = deletedMessageData; // If it's already a string (potentially mesid)
             }
 
             if (!deletedMessageId) {
-                 console.warn(`${pluginName}: Received MESSAGE_DELETED event with unclear data:`, deletedMessageData);
+                 console.warn(`${pluginName}: Received MESSAGE_DELETED event with unclear message identifier:`, deletedMessageData);
                  return;
             }
 
-            console.log(`${pluginName}: 检测到消息删除事件, ID/Index: ${deletedMessageId}`);
+            console.log(`${pluginName}: Processing deletion for message identifier: ${deletedMessageId}`);
             const chatMetadata = ensureFavoritesArrayExists();
             if (!chatMetadata || !Array.isArray(chatMetadata.favorites) || !chatMetadata.favorites.length) return;
 
-            // Find if any favorite references this messageId (mesid string)
+            // Find if any favorite references this messageId
             const favIndex = chatMetadata.favorites.findIndex(fav => fav.messageId === deletedMessageId);
 
             if (favIndex !== -1) {
-                console.log(`${pluginName}: 消息 ${deletedMessageId} 被删除，移除对应的收藏项`);
-                chatMetadata.favorites.splice(favIndex, 1);
+                const removedFav = chatMetadata.favorites.splice(favIndex, 1)[0];
+                console.log(`${pluginName}: Message ${deletedMessageId} deleted, removing corresponding favorite:`, removedFav);
                 saveMetadataDebounced(); // Save changes
 
                 // Update the popup if it's open
-                if (favoritesPopup && favoritesPopup.isVisible()) {
+                if (favoritesPopup && favoritesPopup.dlg && favoritesPopup.dlg.open) {
                     updateFavoritesPopup();
                 }
             } else {
-                 console.log(`${pluginName}: 未找到引用已删除消息 ${deletedMessageId} 的收藏项`);
+                 console.log(`${pluginName}: No favorite found referencing deleted message identifier ${deletedMessageId}.`);
             }
         });
 
         // Listener for when new messages appear (sent or received)
-        const handleNewMessage = (messageData) => { // messageData might contain info about the new message
+        const handleNewMessage = (messageDataOrIndex) => {
+            console.log(`${pluginName}: Event MESSAGE_RECEIVED or MESSAGE_SENT detected.`);
+             // Delay slightly to ensure the message element exists in the DOM
              setTimeout(() => {
-                 addFavoriteIconsToMessages(); // Ensure new messages get the icon structure
-                 // refreshFavoriteIconsInView(); // Usually not needed, new icon defaults to off
-                 // Optionally, if messageData provides the ID, target just that one:
-                 if (typeof messageData === 'object' && messageData.id) {
-                      const newMessageElement = $(`#chat .mes[mesid="${messageData.id}"]`);
-                      if (newMessageElement.length && !newMessageElement.find('.favorite-toggle-icon').length) {
-                           const extraButtonsContainer = newMessageElement.find('.extraMesButtons');
-                           if(extraButtonsContainer.length) {
-                               extraButtonsContainer.append(messageButtonHtml);
-                           }
-                      }
-                 }
-             }, 100); // Delay to allow DOM update
+                 addFavoriteIconsToMessages(); // Re-run to catch the new message(s)
+             }, 200);
         };
         eventSource.on(event_types.MESSAGE_RECEIVED, handleNewMessage);
         eventSource.on(event_types.MESSAGE_SENT, handleNewMessage);
-        eventSource.on(event_types.MESSAGE_UPDATED, (updateData) => { // Refresh state when message content/metadata changes
-            console.log(`${pluginName}: Message updated event detected.`);
-             setTimeout(() => refreshFavoriteIconsInView(), 150); // Refresh all icons might be safest
+        eventSource.on(event_types.MESSAGE_UPDATED, (updateData) => {
+            console.log(`${pluginName}: Event MESSAGE_UPDATED detected.`);
+             // A message update might change its content, potentially affecting favorites if metadata were stored
+             // For now, just ensure icons are correct (state shouldn't change unless fav status is part of update?)
+             setTimeout(() => refreshFavoriteIconsInView(), 150);
         });
 
 
         // Listener for when more messages are loaded (scrolling up)
         eventSource.on(event_types.MORE_MESSAGES_LOADED, () => {
-             console.log(`${pluginName}: 加载了更多消息，更新图标...`);
+             console.log(`${pluginName}: Event MORE_MESSAGES_LOADED detected.`);
+             // Delay to allow messages to render
              setTimeout(() => {
                  addFavoriteIconsToMessages(); // Add icon structure to newly loaded messages
                  refreshFavoriteIconsInView(); // Refresh the state of all visible icons
-             }, 150); // Allow time for messages to render
+             }, 250);
         });
 
-        // MutationObserver remains a good fallback for dynamic changes not caught by events
+        // Using MutationObserver as a robust fallback for DOM changes
         const chatObserver = new MutationObserver((mutations) => {
             let needsIconAddition = false;
             for (const mutation of mutations) {
                 if (mutation.type === 'childList' && mutation.addedNodes.length) {
                     mutation.addedNodes.forEach(node => {
-                        // Check if the added node is a message or contains messages
-                        if (node.nodeType === 1) { // Check if it's an element node
-                            if ($(node).hasClass('mes') || $(node).find('.mes').length > 0) {
-                                needsIconAddition = true;
-                            }
+                        // Check if the added node is an element and is/contains a '.mes'
+                        if (node.nodeType === 1 && (node.matches('.mes') || node.querySelector('.mes'))) {
+                            needsIconAddition = true;
                         }
                     });
                 }
-                // Optional: Check if attributes changed on a .mes element (might affect mesid)
-                // if (mutation.type === 'attributes' && $(mutation.target).hasClass('mes')) {
-                //     needsIconRefresh = true; // Might need refresh, not just addition
-                // }
+                // Optimization: break early if change detected
+                if (needsIconAddition) break;
             }
+
             if (needsIconAddition) {
-                 // Use debounce or throttle if this fires too often
+                 // Debounce or throttle this if it triggers too frequently
                  setTimeout(() => {
-                     console.log(`${pluginName}: MutationObserver detected added messages, adding icons...`);
+                     console.log(`${pluginName}: MutationObserver detected added message nodes, ensuring icons...`);
                      addFavoriteIconsToMessages();
-                     // Optionally refresh icons too, if needed
-                     // refreshFavoriteIconsInView();
-                 }, 200); // Longer delay for mutation observer
+                     // Refresh might be needed if elements were replaced, not just added
+                     refreshFavoriteIconsInView();
+                 }, 300); // Debounce delay
             }
         });
 
@@ -1051,18 +1122,20 @@ jQuery(async () => {
         if (chatElement) {
             chatObserver.observe(chatElement, {
                 childList: true, // Observe direct children additions/removals
-                subtree: true    // Observe additions/removals in descendants as well
-                // attributes: true, // Optionally observe attribute changes (e.g., mesid)
-                // attributeFilter: ['mesid'] // Filter attributes if observing them
+                subtree: true    // Observe additions/removals in descendants too
             });
-             console.log(`${pluginName}: MutationObserver 已启动，监视 #chat 的变化`);
+             console.log(`${pluginName}: MutationObserver started monitoring #chat.`);
         } else {
-             console.error(`${pluginName}: 未找到 #chat 元素，无法启动 MutationObserver`);
+             console.error(`${pluginName}: Could not find #chat element to observe.`);
         }
 
 
         console.log(`${pluginName}: 插件加载完成!`);
     } catch (error) {
-        console.error(`${pluginName}: 初始化过程中出错:`, error);
+        console.error(`${pluginName}: Initialization error:`, error);
+        // Display error to user
+        try {
+            callGenericPopup(`收藏夹插件初始化失败: ${error.message}`, POPUP_TYPE.ERROR);
+        } catch {}
     }
 });
