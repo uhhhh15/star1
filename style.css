@@ -1,211 +1,283 @@
 /* public/extensions/third-party/favorites-plugin/style.css */
 
-/* Star icon styles in chat */
-.favorite-toggle-icon {
-    cursor: pointer;
-    /* Ensure it takes up space for clicking */
-    padding: 2px 5px;
-    display: inline-block; /* Or flex, depending on container */
-    vertical-align: middle; /* Align with other buttons */
-}
-
-.favorite-toggle-icon i.fa-regular {
-    color: #999; /* Default empty star color */
-    transition: color 0.2s ease;
-}
-
-.favorite-toggle-icon i.fa-solid {
-    color: #ffcc00; /* Filled star color */
-    transition: color 0.2s ease;
-}
-
-.favorite-toggle-icon:hover i {
-    color: #ffeb99; /* Hover effect */
-}
-
-
 /* Favorites popup styles */
-/* Ensure the popup content ID matches the one used in updateFavoritesPopup */
-#favorites-popup-content {
-    padding: 15px;
+#favorites-popup-content { /* Target the specific ID generated in updateFavoritesPopup */
+    padding: 15px; /* Increase padding slightly */
     max-height: 75vh; /* Adjust max height as needed */
     overflow-y: auto;
-    background-color: rgba(40, 43, 48, 0.9); /* Slightly transparent dark background */
-    border-radius: 8px; /* Rounded corners for the content area */
+    display: flex;
+    flex-direction: column;
 }
 
 .favorites-header h3 {
     text-align: center;
-    margin: 0 0 15px 0;
-    color: #eee;
-    font-size: 1.2em;
+    margin: 0 0 10px 0;
+    color: #eee; /* Lighter color for header */
 }
 
 .favorites-divider {
     height: 1px;
-    background-color: #4f545c; /* Discord-like divider color */
-    margin: 15px 0;
-    border: none;
+    background-color: #ffcc00; /* Use a theme color */
+    margin: 10px 0;
+    border: none; /* Remove default border */
 }
 
 .favorites-list {
-    margin: 15px 0;
+    margin: 10px 0;
+    flex-grow: 1; /* Allow list to take available space */
+    overflow-y: auto; /* Ensure list itself can scroll if needed */
+    padding-right: 5px; /* Add padding for scrollbar */
 }
 
 .favorites-empty {
     text-align: center;
-    color: #888;
-    padding: 30px 10px;
+    color: #999; /* Slightly lighter grey */
+    padding: 30px; /* More padding */
     font-style: italic;
 }
 
-/* Styling for each favorite item in the popup */
 .favorite-item {
     border: 1px solid #444;
     border-radius: 8px;
-    margin-bottom: 12px;
-    padding: 12px 15px;
-    background-color: #36393f; /* Darker item background */
+    margin-bottom: 12px; /* Slightly more space */
+    padding: 12px; /* Slightly more padding */
+    background-color: rgba(0, 0, 0, 0.3); /* Slightly darker background */
     position: relative;
-    transition: background-color 0.2s ease;
+    transition: background-color 0.2s ease; /* Add hover effect */
 }
 
 .favorite-item:hover {
-    background-color: #40444b; /* Slightly lighter on hover */
+    background-color: rgba(0, 0, 0, 0.4); /* Darken on hover */
 }
 
+
 .fav-meta {
-    font-size: 0.85em;
-    color: #aaa;
+    font-size: 0.85em; /* Slightly larger */
+    color: #bbb; /* Lighter grey */
     margin-bottom: 6px;
 }
 
 .fav-note {
     background-color: rgba(255, 255, 0, 0.1);
-    padding: 6px 8px;
+    padding: 6px 8px; /* Adjust padding */
     border-left: 3px solid #ffcc00;
-    margin: 8px 0;
+    margin-bottom: 8px;
     font-style: italic;
-    font-size: 0.9em;
-    color: #eee;
+    font-size: 0.9em; /* Slightly smaller */
+    color: #eee; /* Ensure text is visible */
     border-radius: 0 4px 4px 0; /* Slight rounding */
 }
 
-/* Preview text within the popup item */
 .fav-preview {
     margin-bottom: 8px;
-    line-height: 1.4;
-    max-height: 100px; /* Limit preview height in popup */
-    overflow-y: auto;  /* Scroll if preview is long */
-    word-wrap: break-word;
-    white-space: pre-wrap; /* Respect newlines */
-    font-size: 0.95em;
-    padding: 5px;
-    background-color: rgba(0, 0, 0, 0.1); /* Subtle background for preview */
-    border-radius: 4px;
-    color: #dcddde; /* Standard text color */
-}
-
-.fav-preview.deleted {
-    color: #ff6b6b; /* More visible red for deleted */
-    font-style: italic;
-    /* Apply height/overflow limits to deleted state too */
-    max-height: 100px;
+    line-height: 1.45; /* Adjust line height */
+    max-height: 150px; /* Slightly reduce max-height for preview */
     overflow-y: auto;
     word-wrap: break-word;
     white-space: pre-wrap;
+    background-color: rgba(255, 255, 255, 0.03); /* Very subtle background */
+    padding: 5px; /* Add some padding */
+    border-radius: 4px; /* Add rounding */
+    font-size: 0.95em; /* Adjust font size */
+}
+/* Ensure scrollbar looks decent on webkit */
+.fav-preview::-webkit-scrollbar {
+    width: 6px;
+}
+.fav-preview::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 3px;
+}
+.fav-preview::-webkit-scrollbar-thumb {
+    background: #666;
+    border-radius: 3px;
+}
+.fav-preview::-webkit-scrollbar-thumb:hover {
+    background: #888;
 }
 
-/* Action buttons container */
+
+.fav-preview.deleted {
+    color: #ff5555; /* Adjust color */
+    font-style: italic;
+    max-height: 150px;
+    overflow-y: auto;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    background-color: rgba(255, 0, 0, 0.1); /* Add background hint */
+    padding: 5px;
+    border-radius: 4px;
+}
+
 .fav-actions {
     text-align: right;
-    margin-top: 8px;
+    margin-top: 5px; /* Add some top margin */
 }
 
-/* Individual action icons */
 .fav-actions i {
     cursor: pointer;
-    margin-left: 12px; /* Increased spacing */
-    padding: 6px;      /* Slightly larger click area */
+    margin-left: 12px; /* More space between icons */
+    padding: 6px; /* Slightly larger click area */
     border-radius: 50%;
-    font-size: 1.1em; /* Slightly larger icons */
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition: background-color 0.2s ease, color 0.2s ease; /* Add transitions */
+    font-size: 1.1em; /* Make icons slightly larger */
+    vertical-align: middle; /* Align icons vertically */
 }
 
 .fav-actions i:hover {
-    background-color: rgba(255, 255, 255, 0.15); /* More noticeable hover */
+    background-color: rgba(255, 255, 255, 0.15); /* More visible hover */
 }
 
-/* Specific icon colors */
-.fav-actions i.fa-pencil {
-    color: #7289da; /* Discord-like blue */
+/* Specific Icon Colors */
+.fa-eye.preview-fav { /* Preview icon */
+    color: #4f9bff; /* A distinct blue */
 }
-.fav-actions i.fa-pencil:hover {
-    color: #9eaefc;
-}
-
-.fav-actions i.fa-trash {
-    color: #f04747; /* Discord-like red */
-}
-.fav-actions i.fa-trash:hover {
-    color: #f67d7d;
+.fa-eye.preview-fav:hover {
+    color: #7bbaff;
 }
 
-/* *** NEW: Styling for the preview icon *** */
-.fav-actions i.preview-fav { /* Changed from fa-eye to preview-fav */
-    color: #43b581; /* Discord-like green */
+.fa-pencil.edit-fav { /* Edit icon */
+    color: #50fa7b; /* Green */
 }
-.fav-actions i.preview-fav:hover {
-    color: #73c99e;
+.fa-pencil.edit-fav:hover {
+    color: #8affab;
 }
 
-/* Pagination styles */
+.fa-trash.delete-fav { /* Delete icon */
+    color: #ff5555; /* Red */
+}
+.fa-trash.delete-fav:hover {
+    color: #ff8080;
+}
+
+
 .favorites-pagination {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 15px; /* Increased gap */
-    margin-top: 20px;
+    gap: 15px; /* More gap */
+    margin-top: 20px; /* More margin */
 }
 .favorites-pagination span {
-    color: #aaa;
+    color: #ccc; /* Lighter text */
 }
-.favorites-pagination .menu_button { /* Style pagination buttons like menu buttons */
-    /* Inherit general menu_button styles or define specific ones here */
-    padding: 5px 10px;
-}
-.favorites-pagination .menu_button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+.favorites-pagination button {
+    padding: 6px 12px; /* Adjust padding */
 }
 
 
-/* Footer buttons */
 .favorites-footer {
     display: flex;
-    justify-content: space-between; /* Space out buttons */
-    align-items: center;
+    justify-content: space-between; /* Keep space between */
+    align-items: center; /* Align items vertically */
     margin-top: 20px;
-    padding-top: 15px;
-    border-top: 1px solid #4f545c; /* Separator line above footer */
+    padding-top: 10px; /* Add padding top */
+    border-top: 1px solid #444; /* Add separator line */
 }
-.favorites-footer .menu_button {
-    /* Style footer buttons like menu buttons */
-    padding: 8px 15px;
-}
-
-/* Optional: Spinner styling if used during loading */
-.spinner {
-    border: 4px solid rgba(255, 255, 255, 0.1);
-    border-left-color: #ffffff;
-    border-radius: 50%;
-    width: 30px;
-    height: 30px;
-    animation: spin 1s linear infinite;
-    margin: 20px auto; /* Center spinner */
+.favorites-footer button {
+    padding: 8px 15px; /* Adjust padding */
 }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+
+/* Star icon styles on messages */
+.favorite-toggle-icon {
+    cursor: pointer;
+    padding: 5px; /* Add padding for easier click */
+    display: inline-block; /* Ensure proper layout */
+    vertical-align: middle; /* Align with other buttons */
+}
+
+.favorite-toggle-icon i {
+    transition: color 0.2s ease; /* Smooth color transition */
+    font-size: 1em; /* Adjust size if needed */
+}
+
+
+.favorite-toggle-icon i.fa-regular {
+    color: #aaa; /* Slightly lighter inactive */
+}
+.favorite-toggle-icon:hover i.fa-regular {
+    color: #ccc; /* Brighten on hover */
+}
+
+.favorite-toggle-icon i.fa-solid {
+    color: #ffcc00; /* Keep bright yellow for favorited */
+}
+.favorite-toggle-icon:hover i.fa-solid {
+    color: #ffe066; /* Slightly brighter hover */
+}
+
+/* Ensure fav-preview handles formatted content well */
+.fav-preview pre {
+    background-color: rgba(0, 0, 0, 0.3); /* Darker background for code blocks inside preview */
+    padding: 8px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.9em;
+}
+.fav-preview code {
+     background-color: rgba(0, 0, 0, 0.5); /* Darker inline code */
+     padding: 0.1em 0.3em;
+     border-radius: 3px;
+}
+.fav-preview blockquote {
+    border-left: 3px solid #888;
+    padding-left: 8px;
+    margin-left: 5px; /* Adjust margin */
+    color: #ccc;
+}
+
+/* Settings drawer styles (from settings_display.html) */
+.inline-drawer {
+    border: 1px solid #444;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.inline-drawer-header {
+    padding: 10px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid #444; /* Separator */
+}
+.inline-drawer-header:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.inline-drawer-icon {
+    transition: transform 0.3s ease;
+}
+
+.inline-drawer-icon.down {
+    transform: rotate(0deg);
+}
+
+.inline-drawer-icon.up {
+    transform: rotate(-180deg);
+}
+
+.inline-drawer-content {
+    padding: 15px; /* More padding for content */
+    border-top: none;
+    display: none; /* Initially hidden */
+    background-color: rgba(0, 0, 0, 0.2); /* Slightly different bg */
+    color: #ddd; /* Lighter text */
+}
+
+.inline-drawer-content p {
+    margin-top: 0;
+    line-height: 1.6;
+}
+
+.inline-drawer-content ul {
+    margin-top: 10px;
+    padding-left: 20px;
+}
+
+.inline-drawer-content li {
+    margin-bottom: 8px;
 }
